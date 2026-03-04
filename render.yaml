@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: plinky-monolith-archive
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: MONOLITH_TIMEOUT_SEC
+        value: "60"
+      - key: MONOLITH_MAX_TIMEOUT_SEC
+        value: "180"
+      - key: S3_PREFIX
+        value: "archives"
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: "true"
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
