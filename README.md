@@ -15,7 +15,7 @@ If your bucket is Supabase Storage via S3 compatibility, set:
 - `S3_ENDPOINT=https://<project-ref>.storage.supabase.co/storage/v1/s3`
 - `S3_FORCE_PATH_STYLE=true`
 - `S3_REGION=us-east-1` (or the region shown by Supabase)
-- `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from Supabase S3 credentials
+- `SUPABASE_S3_ACCESS_KEY_ID` and `SUPABASE_S3_SECRET_ACCESS_KEY` from Supabase S3 credentials
 
 ## Endpoints
 
@@ -31,8 +31,27 @@ If your bucket is Supabase Storage via S3 compatibility, set:
 - `ignoreErrors` (optional): Monolith `-e`, default `true`
 - `excludeJavascript` (optional): Monolith `-j`, default `false`
 - `store` (optional): upload to S3 and return JSON metadata, default `false`
-- `key` (optional): explicit S3 object key
+- `key` (optional): explicit S3 object key (if omitted, a URL-derived key is generated automatically)
 - `userAgent` (optional): custom User-Agent
+
+### S3 object metadata
+
+Uploads are written with:
+
+- `Content-Type: text/html; charset=utf-8`
+- `Content-Disposition: inline`
+
+This makes direct object URLs much more likely to render as HTML instead of downloading as plain text.
+
+### Automatic key format
+
+If you do not pass `key`, the service now generates a deterministic, S3-safe key from the URL:
+
+`<prefix>/<host>/<normalized-path>[--q-<query-hash>]--<url-hash>.html`
+
+Example:
+
+`archives/github.com/bitomule/koubou--d0f3c6e2ab.html`
 
 ## Local run
 
@@ -56,8 +75,8 @@ curl -L "http://127.0.0.1:10000/archive?url=https://example.com" -o archive.html
    - `S3_BUCKET`
    - `S3_REGION`
    - optional for S3-compatible providers: `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`
-   - `AWS_ACCESS_KEY_ID`
-   - `AWS_SECRET_ACCESS_KEY`
+   - `SUPABASE_S3_ACCESS_KEY_ID`
+   - `SUPABASE_S3_SECRET_ACCESS_KEY`
    - optional: `S3_PREFIX`, `MONOLITH_TIMEOUT_SEC`
 5. Deploy.
 

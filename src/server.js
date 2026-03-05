@@ -1,5 +1,5 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,6 +24,10 @@ const S3_PREFIX = process.env.S3_PREFIX ?? "archives";
 const S3_ENDPOINT = process.env.S3_ENDPOINT;
 const S3_FORCE_PATH_STYLE_ENV = process.env.S3_FORCE_PATH_STYLE;
 const S3_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN;
+const S3_ACCESS_KEY_ID =
+  process.env.SUPABASE_S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID;
+const S3_SECRET_ACCESS_KEY =
+  process.env.SUPABASE_S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY;
 const s3Enabled = Boolean(S3_BUCKET && S3_REGION);
 
 function parseBool(input, fallback = false) {
@@ -47,10 +51,10 @@ const s3Client = s3Enabled
       region: S3_REGION,
       endpoint: S3_ENDPOINT || undefined,
       forcePathStyle: inferForcePathStyle(S3_ENDPOINT, S3_FORCE_PATH_STYLE_ENV),
-      credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+      credentials: S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY
         ? {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            accessKeyId: S3_ACCESS_KEY_ID,
+            secretAccessKey: S3_SECRET_ACCESS_KEY,
             sessionToken: S3_SESSION_TOKEN || undefined
           }
         : undefined
@@ -74,21 +78,58 @@ function parseUrl(rawUrl) {
   }
 }
 
+function normalizePrefix(prefix) {
+  const trimmed = String(prefix ?? "").trim().replace(/^\/+|\/+$/g, "");
+  return trimmed.length > 0 ? trimmed : "archives";
+}
+
+function slugify(value, fallback = "item", maxLen = 80) {
+  const normalized = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized) return fallback;
+  return normalized.slice(0, maxLen);
+}
+
+function ensureHtmlExtension(objectKey) {
+  const cleaned = String(objectKey ?? "").replace(/^\/+/, "").trim();
+  if (!cleaned) return "";
+  if (/\.html?$/i.test(cleaned)) return cleaned;
+  return `${cleaned}.html`;
+}
+
+function shortUrlHash(urlString) {
+  return createHash("sha256").update(urlString).digest("hex").slice(0, 10);
+}
+
 function buildObjectKey(targetUrl, customKey) {
   if (customKey && typeof customKey === "string") {
-    return customKey.replace(/^\/+/, "");
+    const explicitKey = ensureHtmlExtension(customKey);
+    if (explicitKey) return explicitKey;
   }
 
-  const host = targetUrl.hostname.replace(/[^a-zA-Z0-9.-]/g, "_");
-  const pathname = targetUrl.pathname
-    .replace(/[^a-zA-Z0-9/_-]/g, "")
-    .replace(/\/+/g, "/")
-    .replace(/^\/|\/$/g, "")
-    .replace(/\//g, "-")
-    .slice(0, 100);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const stem = pathname.length > 0 ? `${host}-${pathname}` : host;
-  return `${S3_PREFIX}/${stem}-${timestamp}.html`;
+  const prefix = normalizePrefix(S3_PREFIX);
+  const host = slugify(targetUrl.hostname, "site", 120);
+  const pathSegments = targetUrl.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => slugify(segment))
+    .slice(0, 12);
+  const hasTrailingSlash = targetUrl.pathname.endsWith("/");
+  const pathStem =
+    pathSegments.length === 0 || hasTrailingSlash
+      ? [...pathSegments, "index"].join("/")
+      : pathSegments.join("/");
+  const querySuffix = targetUrl.search
+    ? `--q-${shortUrlHash(targetUrl.search)}`
+    : "";
+  const urlSuffix = `--${shortUrlHash(targetUrl.toString())}.html`;
+  const stemWithSuffix = `${pathStem}${querySuffix}${urlSuffix}`;
+  return `${prefix}/${host}/${stemWithSuffix}`;
 }
 
 function runMonolith({
@@ -156,7 +197,7 @@ function runMonolith({
 async function uploadToS3(filePath, objectKey) {
   if (!s3Enabled || !s3Client || !S3_BUCKET) {
     throw new Error(
-      "S3 is not configured. Set S3_BUCKET and S3_REGION (and AWS credentials)."
+      "S3 is not configured. Set S3_BUCKET, S3_REGION, and Supabase S3 credentials."
     );
   }
 
@@ -166,7 +207,8 @@ async function uploadToS3(filePath, objectKey) {
       Bucket: S3_BUCKET,
       Key: objectKey,
       Body: body,
-      ContentType: "text/html; charset=utf-8"
+      ContentType: "text/html; charset=utf-8",
+      ContentDisposition: "inline"
     })
   );
 }

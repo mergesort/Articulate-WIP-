@@ -20,7 +20,7 @@ services:
         sync: false
       - key: S3_REGION
         sync: false
-      - key: AWS_ACCESS_KEY_ID
+      - key: SUPABASE_S3_ACCESS_KEY_ID
         sync: false
-      - key: AWS_SECRET_ACCESS_KEY
+      - key: SUPABASE_S3_SECRET_ACCESS_KEY
         sync: false
